@@ -31,13 +31,15 @@ while others can steal data from the queue simultaneously.
 */
 template <typename T>
 class UnboundedTaskQueue {
-  
+
   static_assert(std::is_pointer_v<T>, "T must be a pointer type");
 
   struct Array {
-
+    // xcy: queue capacity
     int64_t C;
+    // xcy: max array index(C - 1)
     int64_t M;
+    // xcy: array<T, size_t{C}>
     std::atomic<T>* S;
 
     explicit Array(int64_t c) :
@@ -55,6 +57,7 @@ class UnboundedTaskQueue {
     }
 
     void push(int64_t i, T o) noexcept {
+      // xcy: set i to [0, M]
       S[i & M].store(o, std::memory_order_relaxed);
     }
 
@@ -62,6 +65,7 @@ class UnboundedTaskQueue {
       return S[i & M].load(std::memory_order_relaxed);
     }
 
+    // xcy: move old array[top, bottom) to new array[t, b)
     Array* resize(int64_t b, int64_t t) {
       Array* ptr = new Array {2*C};
       for(int64_t i=t; i!=b; ++i) {
@@ -107,12 +111,12 @@ class UnboundedTaskQueue {
   @brief queries the capacity of the queue
   */
   int64_t capacity() const noexcept;
-  
+
   /**
   @brief inserts an item to the queue
 
   @param item the item to push to the queue
-  
+
   Only the owner thread can insert an item to the queue.
   The operation can trigger the queue to resize its capacity
   if more space is required.
@@ -152,6 +156,7 @@ UnboundedTaskQueue<T>::UnboundedTaskQueue(int64_t LogSize) {
 // Destructor
 template <typename T>
 UnboundedTaskQueue<T>::~UnboundedTaskQueue() {
+  // xcy: std::for_each(_garbage.begin(), _garbage.end(), [](auto arr_ptr) { delete arr_ptr; });
   for(auto a : _garbage) {
     delete a;
   }
@@ -217,6 +222,7 @@ T UnboundedTaskQueue<T>::pop() {
     }
   }
   else {
+    // xcy: queue is empty, return nullptr
     _bottom.store(b + 1, std::memory_order_relaxed);
   }
 
@@ -226,7 +232,7 @@ T UnboundedTaskQueue<T>::pop() {
 // Function: steal
 template <typename T>
 T UnboundedTaskQueue<T>::steal() {
-  
+
   int64_t t = _top.load(std::memory_order_acquire);
   std::atomic_thread_fence(std::memory_order_seq_cst);
   int64_t b = _bottom.load(std::memory_order_acquire);
@@ -277,7 +283,7 @@ UnboundedTaskQueue<T>::resize_array(Array* a, int64_t b, int64_t t) {
 
 @brief class to create a lock-free bounded single-producer multiple-consumer queue
 
-This class implements the work-stealing queue described in the paper, 
+This class implements the work-stealing queue described in the paper,
 "Correct and Efficient Work-Stealing for Weak Memory Models,"
 available at https://www.di.ens.fr/~zappa/readings/ppopp13.pdf.
 
@@ -286,9 +292,9 @@ while others can steal data from the queue.
 */
 template <typename T, size_t LogSize = TF_DEFAULT_BOUNDED_TASK_QUEUE_LOG_SIZE>
 class BoundedTaskQueue {
-  
+
   static_assert(std::is_pointer_v<T>, "T must be a pointer type");
-  
+
   constexpr static int64_t BufferSize = int64_t{1} << LogSize;
   constexpr static int64_t BufferMask = (BufferSize - 1);
 
@@ -299,7 +305,7 @@ class BoundedTaskQueue {
   alignas(2*TF_CACHELINE_SIZE) std::atomic<T> _buffer[BufferSize];
 
   public:
-    
+
   /**
   @brief constructs the queue with a given capacity
   */
@@ -309,12 +315,12 @@ class BoundedTaskQueue {
   @brief destructs the queue
   */
   ~BoundedTaskQueue() = default;
-  
+
   /**
   @brief queries if the queue is empty at the time of this call
   */
   bool empty() const noexcept;
-  
+
   /**
   @brief queries the number of items at the time of this call
   */
@@ -324,42 +330,42 @@ class BoundedTaskQueue {
   @brief queries the capacity of the queue
   */
   constexpr size_t capacity() const;
-  
+
   /**
   @brief tries to insert an item to the queue
 
-  @tparam O data type 
+  @tparam O data type
   @param item the item to perfect-forward to the queue
   @return `true` if the insertion succeed or `false` (queue is full)
-  
-  Only the owner thread can insert an item to the queue. 
+
+  Only the owner thread can insert an item to the queue.
 
   */
   template <typename O>
   bool try_push(O&& item);
-  
+
   /**
   @brief tries to insert an item to the queue or invoke the callable if fails
 
-  @tparam O data type 
+  @tparam O data type
   @tparam C callable type
   @param item the item to perfect-forward to the queue
   @param on_full callable to invoke when the queue is faull (insertion fails)
-  
-  Only the owner thread can insert an item to the queue. 
+
+  Only the owner thread can insert an item to the queue.
 
   */
   template <typename O, typename C>
   void push(O&& item, C&& on_full);
-  
+
   /**
   @brief pops out an item from the queue
 
-  Only the owner thread can pop out an item from the queue. 
+  Only the owner thread can pop out an item from the queue.
   The return can be a @std_nullopt if this operation failed (empty queue).
   */
   T pop();
-  
+
   /**
   @brief steals an item from the queue
 
@@ -397,7 +403,7 @@ bool BoundedTaskQueue<T, LogSize>::try_push(O&& o) {
   if TF_UNLIKELY((b - t) >= BufferSize - 1) {
     return false;
   }
-  
+
   _buffer[b & BufferMask].store(std::forward<O>(o), std::memory_order_relaxed);
 
   std::atomic_thread_fence(std::memory_order_release);
@@ -419,7 +425,7 @@ void BoundedTaskQueue<T, LogSize>::push(O&& o, C&& on_full) {
     on_full();
     return;
   }
-  
+
   _buffer[b & BufferMask].store(std::forward<O>(o), std::memory_order_relaxed);
 
   std::atomic_thread_fence(std::memory_order_release);
@@ -441,8 +447,8 @@ T BoundedTaskQueue<T, LogSize>::pop() {
     item = _buffer[b & BufferMask].load(std::memory_order_relaxed);
     if(t == b) {
       // the last item just got stolen
-      if(!_top.compare_exchange_strong(t, t+1, 
-                                       std::memory_order_seq_cst, 
+      if(!_top.compare_exchange_strong(t, t+1,
+                                       std::memory_order_seq_cst,
                                        std::memory_order_relaxed)) {
         item = nullptr;
       }
@@ -462,7 +468,7 @@ T BoundedTaskQueue<T, LogSize>::steal() {
   int64_t t = _top.load(std::memory_order_acquire);
   std::atomic_thread_fence(std::memory_order_seq_cst);
   int64_t b = _bottom.load(std::memory_order_acquire);
-  
+
   T item{nullptr};
 
   if(t < b) {

@@ -13,13 +13,13 @@ class AtomicNotifier {
   friend class Executor;
 
   public:
-  
+
   struct Waiter {
     alignas (2*TF_CACHELINE_SIZE) uint32_t epoch;
   };
 
   AtomicNotifier(size_t N) noexcept : _state(0), _waiters(N) {}
-  ~AtomicNotifier() { assert((_state.load() & WAITER_MASK) == 0); } 
+  ~AtomicNotifier() { assert((_state.load() & WAITER_MASK) == 0); }
 
   void notify_one() noexcept;
   void notify_all() noexcept;
@@ -44,6 +44,7 @@ class AtomicNotifier {
 
   // _state stores the epoch in the most significant 32 bits and the
   // waiter count in the least significant 32 bits.
+  // xcy: epoch_32bit + waiter_count+32bit
   std::atomic<uint64_t> _state;
   std::vector<Waiter> _waiters;
 
@@ -66,7 +67,7 @@ inline void AtomicNotifier::notify_all() noexcept {
     _state.notify_all();
   }
 }
-  
+
 inline void AtomicNotifier::notify_n(size_t n) noexcept {
   if(n >= _waiters.size()) {
     notify_all();
@@ -97,7 +98,7 @@ inline void AtomicNotifier::cancel_wait(Waiter*) noexcept {
 inline void AtomicNotifier::commit_wait(Waiter* waiter) noexcept {
   uint64_t prev = _state.load(std::memory_order_acquire);
   while((prev >> EPOCH_SHIFT) == waiter->epoch) {
-    _state.wait(prev, std::memory_order_acquire); 
+    _state.wait(prev, std::memory_order_acquire);
     prev = _state.load(std::memory_order_acquire);
   }
   // memory_order_relaxed would suffice for correctness, but the faster
@@ -113,13 +114,13 @@ class AtomicNotifierV2 {
   friend class Executor;
 
   public:
-  
+
   struct Waiter {
     alignas (2*TF_CACHELINE_SIZE) uint32_t epoch;
   };
 
   AtomicNotifierV2(size_t N) noexcept : _state(0), _waiters(N) {}
-  ~AtomicNotifierV2() { assert((_state.load() & WAITER_MASK) == 0); } 
+  ~AtomicNotifierV2() { assert((_state.load() & WAITER_MASK) == 0); }
 
   void notify_one() noexcept;
   void notify_all() noexcept;
@@ -157,7 +158,7 @@ inline void AtomicNotifierV2::notify_one() noexcept {
   std::atomic_thread_fence(std::memory_order_seq_cst);
   if((_state.load(std::memory_order_acquire) & WAITER_MASK) != 0) {
     _state.fetch_add(EPOCH_INC, std::memory_order_release);
-    _state.notify_one(); 
+    _state.notify_one();
   }
 }
 
@@ -165,10 +166,10 @@ inline void AtomicNotifierV2::notify_all() noexcept {
   std::atomic_thread_fence(std::memory_order_seq_cst);
   if((_state.load(std::memory_order_acquire) & WAITER_MASK) != 0) {
     _state.fetch_add(EPOCH_INC, std::memory_order_release);
-    _state.notify_all(); 
+    _state.notify_all();
   }
 }
-  
+
 inline void AtomicNotifierV2::notify_n(size_t n) noexcept {
   if(n >= _waiters.size()) {
     notify_all();
@@ -186,7 +187,7 @@ inline size_t AtomicNotifierV2::size() const noexcept {
 
 inline void AtomicNotifierV2::prepare_wait(Waiter* waiter) noexcept {
   //uint64_t prev = _state.fetch_add(WAITER_INC, std::memory_order_acquire);
-  //waiter->epoch = prev + WAITER_INC; 
+  //waiter->epoch = prev + WAITER_INC;
   waiter->epoch = _state.fetch_add(WAITER_INC, std::memory_order_relaxed);
   std::atomic_thread_fence(std::memory_order_seq_cst);
 }

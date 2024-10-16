@@ -62,21 +62,22 @@ class Worker {
            run) associated with the worker
     */
     inline size_t queue_size() const { return _wsq.size(); }
-    
+
     /**
     @brief queries the current capacity of the queue
     */
     inline size_t queue_capacity() const { return static_cast<size_t>(_wsq.capacity()); }
 
   private:
-
+    // xcy: 0 ~ N - 1
     size_t _id;
     size_t _vtm;
     Executor* _executor {nullptr};
     std::default_random_engine _rdgen { std::random_device{}() };
+    // xcy: work stealing queue
     BoundedTaskQueue<Node*> _wsq;
     Node* _cache {nullptr};
-
+    // xcy: TODO
     DefaultNotifier::Waiter* _waiter;
 };
 
@@ -93,7 +94,7 @@ namespace pt {
 inline thread_local Worker* worker {nullptr};
 
 }
-    
+
 
 // ----------------------------------------------------------------------------
 // Class Definition: WorkerView

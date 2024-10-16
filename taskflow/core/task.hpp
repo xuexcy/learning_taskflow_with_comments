@@ -89,7 +89,7 @@ inline const char* to_string(TaskType type) {
 A dynamic task is a callable object constructible from std::function<void(Subflow&)>.
 */
 template <typename C>
-constexpr bool is_subflow_task_v = 
+constexpr bool is_subflow_task_v =
   std::is_invocable_r_v<void, C, Subflow&> &&
   !std::is_invocable_r_v<void, C, Runtime&>;
 
@@ -100,7 +100,7 @@ A condition task is a callable object constructible from std::function<int()>
 or std::function<int(tf::Runtime&)>.
 */
 template <typename C>
-constexpr bool is_condition_task_v = 
+constexpr bool is_condition_task_v =
   (std::is_invocable_r_v<int, C> || std::is_invocable_r_v<int, C, Runtime&>) &&
   !is_subflow_task_v<C>;
 
@@ -194,21 +194,25 @@ class Task {
     /**
     @brief queries the number of successors of the task
     */
+    // xcy: out degree
     size_t num_successors() const;
 
     /**
     @brief queries the number of predecessors of the task
     */
+    // xcy: in degree
     size_t num_dependents() const;
 
     /**
     @brief queries the number of strong dependents of the task
     */
+    // xcy: TODO
     size_t num_strong_dependents() const;
 
     /**
     @brief queries the number of weak dependents of the task
     */
+    // xcy: TODO
     size_t num_weak_dependents() const;
 
     /**
@@ -297,7 +301,7 @@ class Task {
     @return @c *this
     */
     Task& data(void* data);
-    
+
     /**
     @brief resets the task handle to null
     */
@@ -348,6 +352,7 @@ class Task {
     /**
     @brief queries pointer to user data
     */
+    // xcy: 和 Task& data(void* data) 对应, 一个 set pointer，一个 get pointer
     void* data() const;
 
 
@@ -422,6 +427,7 @@ inline void Task::reset() {
   _node = nullptr;
 }
 
+// xcy: TODO
 // Procedure: reset_work
 inline void Task::reset_work() {
   _node->_handle.emplace<std::monostate>();
